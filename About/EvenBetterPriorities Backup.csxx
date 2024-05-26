@@ -1,0 +1,357 @@
+﻿//using system.linq;
+//using rimworld;
+//using verse;
+//using harmonylib;
+//using unityengine;// required for mathf
+
+//namespace evenbetterpriorities
+//{
+//    [staticconstructoronstartup]
+//    public static class main
+//    {
+//        static main()
+//        {
+//            log.message("initializing evenbetterpriorities...");
+//            var harmony = new harmony("com.yourname.autoworkpriorities");
+//            harmony.patchall();
+//            log.message("evenbetterpriorities initialized successfully!");
+//        }
+//    }
+
+//    [harmonypatch(typeof(pawn_worksettings), "setpriority")]
+//    public static class pawn_worksettings_setpriority_patch
+//    {
+//        public static void postfix(pawn_worksettings __instance, worktypedef w, int priority)
+//        {
+//            adjustpriorities(traverse.create(__instance).field("pawn").getvalue<pawn>());
+//        }
+
+//        private static void adjustpriorities(pawn pawn)
+//        {
+//            if (pawn == null)
+//            {
+//                log.error("evenbetterpriorities: pawn is null");
+//                return;
+//            }
+
+//            var worksettings = pawn.worksettings;
+//            if (worksettings == null || !pawn.iscolonist || pawn.dead || pawn.downed || pawn.inmentalstate)
+//            {
+//                log.message("evenbetterpriorities: skipping pawn due to invalid state");
+//                return;
+//            }
+
+//            foreach (var worktype in defdatabase<worktypedef>.alldefs)
+//            {
+//                skilldef relevantskill = worktype.relevantskills.firstordefault();
+//                if (relevantskill != null)
+//                {
+//                    var skill = pawn.skills.getskill(relevantskill);
+//                    if (skill != null)
+//                    {
+//                        int skilllevel = skill.level;
+//                        int passion = (int)skill.passion;
+//                        float learningrate = skill.learnratefactor();
+//                        int newpriority = calculatepriority(skilllevel, passion, learningrate);
+//                        worksettings.setpriority(worktype, newpriority);
+//                        log.message($"evenbetterpriorities: set priority {newpriority} for worktype {worktype.defname}");
+//                    }
+//                    else
+//                    {
+//                        log.warning("evenbetterpriorities: skill is null for relevantskill " + relevantskill.defname);
+//                    }
+//                }
+//            }
+//        }
+
+//        private static int calculatepriority(float skilllevel, int passion, float learningrate)
+//        {
+//            // normalize the values to a scale of 0 to 3
+//            float normalizedskill = normalize(skilllevel, 0, 20, 0, 3);
+//            float normalizedpassion = normalize(passion, 0, 2, 0, 3);
+//            float normalizedlearningrate = normalize(learningrate, 0, 2.0f, 0, 3);
+
+//            // calculate the priority
+//            float priorityvalue = 10 - normalizedskill - normalizedpassion - normalizedlearningrate;
+
+//            // ensure the priority is within the range of 1 to 9
+//            int priority = mathf.clamp(mathf.roundtoint(priorityvalue), 1, 9);
+
+//            return priority;
+//        }
+
+//        // helper function to normalize values
+//        private static float normalize(float value, float minvalue, float maxvalue, float newmin, float newmax)
+//        {
+//            return ((value - minvalue) / (maxvalue - minvalue)) * (newmax - newmin) + newmin;
+//        }
+//    }
+//}
+
+using System.Linq;
+using System.Collections.Generic;
+using RimWorld;
+using Verse;
+using HarmonyLib;
+using UnityEngine;
+using System;
+
+namespace EvenBetterPriorities
+{
+    [StaticConstructorOnStartup]
+    public static class EvenBetterPriorities
+    {
+        static EvenBetterPriorities()
+        {
+            var harmony = new Harmony("com.yourname.evenbetterpriorities");
+            harmony.PatchAll();
+            Log.Message("EvenBetterPriorities: Initialized successfully!");
+        }
+
+        public static List<Pawn> disabledPawns = new List<Pawn>();
+        public static List<WorkTypeDef> disabledWorkTypes = new List<WorkTypeDef>();
+        public static int logCounter = 0;
+        public static bool debugMode = true;
+        public static int currentPawnIndex = 0;
+        public static readonly int pawnsPerTick = 5; // Adjust this number to balance performance and update frequency
+
+        internal static readonly int updateIntervalTicks = 833;
+        internal static int tickCounter = 0;
+
+        public static void DisablePawn(Pawn pawn)
+        {
+            if (!disabledPawns.Contains(pawn))
+            {
+                disabledPawns.Add(pawn);
+                LogMessage($"{pawn.Name.ToStringShort} is now disabled for automatic updates.");
+            }
+        }
+
+        public static void EnablePawn(Pawn pawn)
+        {
+            if (disabledPawns.Contains(pawn))
+            {
+                disabledPawns.Remove(pawn);
+                LogMessage($"{pawn.Name.ToStringShort} is now enabled for automatic updates.");
+            }
+        }
+
+        public static void DisableWorkType(WorkTypeDef workType)
+        {
+            if (!disabledWorkTypes.Contains(workType))
+            {
+                disabledWorkTypes.Add(workType);
+                LogMessage($"{workType.defName} is now disabled for automatic updates.");
+            }
+        }
+
+        public static void EnableWorkType(WorkTypeDef workType)
+        {
+            if (disabledWorkTypes.Contains(workType))
+            {
+                disabledWorkTypes.Remove(workType);
+                LogMessage($"{workType.defName} is now enabled for automatic updates.");
+            }
+        }
+
+        public static void AdjustPriorities(Pawn pawn)
+        {
+            try
+            {
+                if (pawn == null || disabledPawns.Contains(pawn) || !IsValidPawn(pawn))
+                {
+                    LogMessage($"Skipping pawn {pawn?.Name.ToStringShort} as it's disabled or invalid.");
+                    return;
+                }
+
+                LogMessage($"Adjusting priorities for pawn {pawn.Name.ToStringShort}.");
+                AssignJobsToPawns();
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Unexpected error adjusting priorities for pawn {pawn?.Name.ToStringShort}. Exception: {ex}");
+            }
+        }
+
+        public static void AssignJobsToPawns()
+        {
+            try
+            {
+                LogMessage("Starting job assignment.");
+                Dictionary<WorkTypeDef, List<PawnRanking>> jobRankings = CalculateAllJobRankings();
+                LogMessage("Calculated all job rankings.");
+
+                foreach (var workType in jobRankings.Keys)
+                {
+                    var rankings = jobRankings[workType].OrderByDescending(r => r.Ranking).ToList();
+                    foreach (var ranking in rankings)
+                    {
+                        if (ranking.Pawn.workSettings.GetPriority(workType) == 0 && !ranking.Pawn.WorkTypeIsDisabled(workType))
+                        {
+                            ranking.Pawn.workSettings.SetPriority(workType, ranking.Ranking);
+                            LogMessage($"Set priority {ranking.Ranking} for pawn {ranking.Pawn.Name.ToStringShort} on work type {workType.defName}.");
+                        }
+                    }
+                }
+
+                AssignUnskilledJobs(jobRankings);
+                LogMessage("Completed job assignment.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Unexpected error in AssignJobsToPawns. Exception: {ex}");
+            }
+        }
+
+        public static Dictionary<WorkTypeDef, List<PawnRanking>> CalculateAllJobRankings()
+        {
+            var jobRankings = new Dictionary<WorkTypeDef, List<PawnRanking>>();
+
+            foreach (var workType in DefDatabase<WorkTypeDef>.AllDefs)
+            {
+                if (!jobRankings.ContainsKey(workType))
+                {
+                    jobRankings[workType] = new List<PawnRanking>();
+                }
+
+                foreach (var pawn in PawnsFinder.AllMaps_FreeColonists)
+                {
+                    if (!IsValidPawn(pawn) || pawn.WorkTypeIsDisabled(workType)) continue;
+
+                    int ranking = CalculateRanking(pawn, workType);
+                    jobRankings[workType].Add(new PawnRanking { Pawn = pawn, Ranking = ranking });
+                    LogMessage($"Calculated ranking {ranking} for pawn {pawn.Name.ToStringShort} on work type {workType.defName}.");
+                }
+            }
+
+            return jobRankings;
+        }
+
+        public static void AssignUnskilledJobs(Dictionary<WorkTypeDef, List<PawnRanking>> jobRankings)
+        {
+            try
+            {
+                LogMessage("Starting unskilled job assignment.");
+                foreach (var workType in jobRankings.Keys)
+                {
+                    if (workType.relevantSkills == null || workType.relevantSkills.Count == 0)
+                    {
+                        var unskilledPawns = jobRankings[workType].Select(r => r.Pawn).ToList();
+                        var rankings = unskilledPawns.OrderBy(p => CountAssignedPriorities(p)).ToList();
+                        foreach (var pawn in rankings)
+                        {
+                            if (pawn.workSettings.GetPriority(workType) == 0 && !pawn.WorkTypeIsDisabled(workType))
+                            {
+                                pawn.workSettings.SetPriority(workType, 3);
+                                LogMessage($"Set priority 3 for unskilled job {workType.defName} for pawn {pawn.Name.ToStringShort}.");
+                            }
+                        }
+                    }
+                }
+                LogMessage("Completed unskilled job assignment.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Unexpected error in AssignUnskilledJobs. Exception: {ex}");
+            }
+        }
+
+        private static int CountAssignedPriorities(Pawn pawn)
+        {
+            return DefDatabase<WorkTypeDef>.AllDefs.Count(workType => pawn.workSettings.GetPriority(workType) > 0);
+        }
+
+        private static bool IsValidPawn(Pawn pawn) => pawn.IsColonist && !pawn.Dead && !pawn.Downed && !pawn.InMentalState;
+
+        private static SkillRecord GetRelevantSkill(Pawn pawn, WorkTypeDef workType)
+        {
+            var relevantSkill = workType.relevantSkills?.FirstOrDefault();
+            return relevantSkill == null ? null : pawn.skills?.GetSkill(relevantSkill);
+        }
+
+        private static int CalculateRanking(Pawn pawn, WorkTypeDef workType)
+        {
+            var skill = GetRelevantSkill(pawn, workType);
+            if (skill == null) return 0;
+
+            return skill.Level + 5 * ((int)skill.passion + (int)skill.LearnRateFactor());
+        }
+
+        public static void LogMessage(string message)
+        {
+            if (debugMode && logCounter++ % 1 == 0) // Log every message to debug
+            {
+                Log.Message($"[{Find.TickManager.TicksGame}] EvenBetterPriorities: {message}");
+            }
+        }
+
+        public class PawnRanking
+        {
+            public Pawn Pawn { get; set; } = null!;
+            public int Ranking { get; set; }
+        }
+    }
+
+    [HarmonyPatch(typeof(Game), "InitNewGame")]
+    public static class Game_InitNewGame_Patch
+    {
+        public static void Postfix()
+        {
+            EvenBetterPriorities.LogMessage("Game initialized, capturing all jobs on demand.");
+        }
+    }
+
+    [HarmonyPatch(typeof(Game), "LoadGame")]
+    public static class Game_LoadGame_Patch
+    {
+        public static void Postfix()
+        {
+            EvenBetterPriorities.LogMessage("Game loaded, capturing all jobs on demand.");
+        }
+    }
+
+    [HarmonyPatch(typeof(Pawn_WorkSettings), "SetPriority")]
+    public static class Pawn_WorkSettings_SetPriority_Patch
+    {
+        public static void Postfix(Pawn_WorkSettings __instance, int priority)
+        {
+            EvenBetterPriorities.AdjustPriorities(Traverse.Create(__instance).Field("pawn").GetValue<Pawn>());
+        }
+    }
+
+    [HarmonyPatch(typeof(TickManager), "DoSingleTick")]
+    public static class TickManager_DoSingleTick_Patch
+    {
+        public static void Postfix()
+        {
+            try
+            {
+                EvenBetterPriorities.tickCounter++;
+                if (EvenBetterPriorities.tickCounter >= EvenBetterPriorities.updateIntervalTicks)
+                {
+                    EvenBetterPriorities.tickCounter = 0;
+                    var pawns = PawnsFinder.AllMaps_FreeColonists.ToList(); // Create a copy of the list
+
+                    // Process a batch of pawns each tick
+                    for (int i = 0; i < EvenBetterPriorities.pawnsPerTick; i++)
+                    {
+                        if (EvenBetterPriorities.currentPawnIndex >= pawns.Count)
+                        {
+                            EvenBetterPriorities.currentPawnIndex = 0;
+                        }
+
+                        var pawn = pawns[EvenBetterPriorities.currentPawnIndex];
+                        EvenBetterPriorities.AdjustPriorities(pawn);
+                        EvenBetterPriorities.currentPawnIndex++;
+                    }
+
+                    EvenBetterPriorities.LogMessage("Batch priority update performed.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Unexpected error in DoSingleTick postfix. Exception: {ex}");
+            }
+        }
+    }
+}

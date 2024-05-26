@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<LangVersion>8.0</LangVersion>
+		<Nullable>enable</Nullable>
+		<BaseOutputPath></BaseOutputPath>
+	</PropertyGroup>
+	<ItemGroup>
+	  <None Remove="About\EvenBetterPriorities Backup.csxx" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Compile Include="About\EvenBetterPriorities Backup.csxx" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="0Harmony">
+			<HintPath>Libraries\0Harmony.dll</HintPath>
+		</Reference>
+		<Reference Include="Assembly-CSharp">
+		  <HintPath>..\..\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine">
+		  <HintPath>..\..\RimWorldWin64_Data\Managed\UnityEngine.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+		  <HintPath>..\..\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+	  <Exec Command="xcopy /Y /R &quot;$(TargetDir)$(TargetFileName)&quot; &quot;D:\STEAMLIBRARY\STEAMAPPS\COMMON\RIMWORLD\MODS\EvenBetterPriorities\Assemblies\&quot;" />
+	</Target>
+</Project>

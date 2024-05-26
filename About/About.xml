@@ -1,0 +1,10 @@
+<ModMetaData>
+  <name>EvenBetterPriorities</name>
+  <description>A mod to automatically adjust work priorities based on skill, passion, and learning rate.</description>
+  <author>Your Name</author>
+  <url>https://github.com/YourGitHubRepo</url>
+  <packageId>YourName.EvenBetterPriorities</packageId>
+  <supportedVersions>
+    <li>1.4</li>
+  </supportedVersions>
+</ModMetaData>
